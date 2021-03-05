@@ -2,7 +2,7 @@
 // Copyright (partly) 2021 Albert Zeyer
 // This also contains some code from CPython.
 
-// c++ -std=c++11 -DEXEC py-to-pickle.cpp -o py-to-pickle.bin
+// c++ -std=c++11 py-to-pickle.cpp -o py-to-pickle.bin
 // c++ -std=c++11 -DLIB py-to-pickle.cpp -shared -fPIC -o libpytopickle.so
 // ./py-to-pickle.bin demo.txt demo.pkl
 // python3 -c "import pickle; pickle.load(open('demo.pkl', 'rb'))"
@@ -13,6 +13,7 @@
 #include <string>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 const int protocol = 3;
 
@@ -162,7 +163,7 @@ struct FileReader : Reader {
 	}
 	virtual ~FileReader() { fclose(fp); };
 	virtual bool valid() { return fp; }
-	virtual size_t pos() { return ftell(fp); }
+	virtual size_t pos() { return ftell(fp); } // rarely called
 	virtual int read_next_char() {
 		return getc_unlocked(fp);
 	}
@@ -198,8 +199,8 @@ struct FileWriter : Writer {
 	FILE* fp;
 	size_t out_pos;
 	
-	FileWriter(const char* filename) {
-		fp = fopen(filename, "w");
+	FileWriter(const char* filename) : out_pos(0) {
+		fp = fopen(filename, "wb");
 		if(fp) flockfile(fp);
 	}
 	virtual ~FileWriter() { fclose(fp); }
@@ -520,7 +521,22 @@ public:
 	}
 };
 
-#ifdef EXEC
+#ifdef LIB
+extern "C"
+int py_to_pickle(const char* in, size_t in_len, char* out, size_t out_len) {
+	MemReader reader(in, in_len);
+	MemWriter writer(out, out_len);
+	Parser parser(&reader, &writer);
+	parser.full_pass();
+	if(parser.got_error)
+		return 1;
+	if(writer.got_error)
+		return 2;
+	return 0;
+}
+
+#else  // LIB
+
 int main(int argc, char** argv) {
 	if(argc <= 2) {
 		printf("usage: %s <in-py-file> <out-pickle-file>\n", argv[0]);
@@ -544,19 +560,3 @@ int main(int argc, char** argv) {
 	return 0;
 }
 #endif
-
-#ifdef LIB
-extern "C"
-int py_to_pickle(const char* in, size_t in_len, char* out, size_t out_len) {
-	MemReader reader(in, in_len);
-	MemWriter writer(out, out_len);
-	Parser parser(&reader, &writer);
-	parser.full_pass();
-	if(parser.got_error)
-		return 1;
-	if(writer.got_error)
-		return 2;
-	return 0;
-}
-#endif
-
