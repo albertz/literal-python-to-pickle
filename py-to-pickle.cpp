@@ -1,6 +1,10 @@
 
-// c++ py-to-pickle.cpp -o py-to-pickle.bin
-// ./a.out demo.txt demo.pkl
+// Copyright (partly) 2021 Albert Zeyer
+// This also contains some code from CPython.
+
+// c++ -std=c++11 -DEXEC py-to-pickle.cpp -o py-to-pickle.bin
+// c++ -std=c++11 -DLIB py-to-pickle.cpp -shared -fPIC -o libpytopickle.so
+// ./py-to-pickle.bin demo.txt demo.pkl
 // python3 -c "import pickle; pickle.load(open('demo.pkl', 'rb'))"
 
 // https://github.com/python/cpython/blob/master/Modules/_pickle.c
@@ -164,6 +168,23 @@ struct FileReader : Reader {
 	}
 };
 
+struct MemReader : Reader {
+	const char* data;
+	size_t size;
+	size_t p;
+
+	MemReader(const char* data_, size_t size_) : data(data_), size(size_), p(0) {}
+	virtual bool valid() { return true; }
+	virtual size_t pos() { return p; }
+	virtual int read_next_char() {
+		if(p >= size)
+			return EOF;
+		char c = data[p];
+		++p;
+		return c;
+	}
+};
+
 struct Writer {
 	virtual ~Writer() {}
 	virtual bool valid() = 0;
@@ -202,6 +223,39 @@ struct FileWriter : Writer {
 	}
 };
 
+struct MemWriter : Writer {
+	char* data;
+	size_t size;
+	size_t p;
+	bool got_error;
+
+	MemWriter(char* data_, size_t size_) : data(data_), size(size_), p(0), got_error(false) {}
+	virtual bool valid() { return true; }
+	virtual size_t pos() { return p; }
+	virtual void seek(size_t pos) { p = pos; }
+	virtual void write_char(char c) {
+		if(p >= size) {
+			_overflow_error(1);
+			return;
+		}
+		data[p] = c;
+		++p;
+	}
+	virtual void write_data(const char* data_, size_t len_) {
+		if(p + len_ > size) {
+			_overflow_error(len_);
+			return;
+		}
+		memcpy(data + p, data_, len_);
+		p += len_;
+	}
+	
+	void _overflow_error(size_t more) {
+		fprintf(stderr, "MemWriter, overflowing to the buffer (pos %li, size %li, add %li)\n", p, size, more);
+		got_error = true;
+	}
+};
+
 typedef std::pair<int,bool> ParseRes;  // next char + parsed one item or not
 
 class Parser {
@@ -209,13 +263,13 @@ class Parser {
 	Writer* writer;
 
 public:
-	Parser(Reader* reader_, Writer* writer_) : reader(reader_), writer(writer_) {}
+	bool got_error;
+	Parser(Reader* reader_, Writer* writer_) : reader(reader_), writer(writer_), got_error(false) {}
 
 private:
-	[[noreturn]]
 	void parse_error(const char* ctx, char c) {
 		fprintf(stderr, "parse error: %s: char '%c' in pos %li\n", ctx, c, reader->pos());
-		exit(1);
+		got_error = true;
 	}
 
 	int read_next_char() { return reader->read_next_char(); }
@@ -226,8 +280,10 @@ public:
 	void full_pass() {
 		start();
 		ParseRes res = parse();
-		if(!res.second)
+		if(!res.second) {
 			parse_error("root", res.first);
+			return;
+		}
 		end();
 	}
 	
@@ -247,7 +303,7 @@ public:
 			int c = res.first;
 			if(c == ',') continue;
 			else if(c == ']') break;
-			else parse_error("list", c);
+			else { parse_error("list", c); return; }
 		}
 		write_char(APPENDS);
 	}
@@ -259,7 +315,10 @@ public:
 		enum {Key, Value} cur = Key;
 		long start_out_pos = writer->pos();
 		auto make_set = [&]{
-			if(count != 1) parse_error("dict after parsing more than one entry", c);
+			if(count != 1) {
+				parse_error("dict after parsing more than one entry", c);
+				return;
+			}
 			cur = Value;
 			obj_type = Set;
 			long cur_pos = writer->pos();
@@ -274,22 +333,22 @@ public:
 			c = res.first;
 			if(res.second) ++count;
 			if(c == ',') {
-				if(count == 1) make_set();
-				if(cur == Key) parse_error("dict after parsing key", c);
+				if(count == 1) { make_set(); if(got_error) return; }
+				if(cur == Key) { parse_error("dict after parsing key", c); return; }
 				if(obj_type == Dict) cur = Key;
 			}
 			else if(c == ':') {
-				if(cur != Key) parse_error("dict expected key before", c);
-				if(obj_type == Set) parse_error("set", c);
+				if(cur != Key) { parse_error("dict expected key before", c); return; }
+				if(obj_type == Set) { parse_error("set", c); return; }
 				cur = Value;
 			}
 			else if(c == '}') {
-				if(count == 1) make_set();
+				if(count == 1) { make_set(); if(got_error) return; }
 				break;
 			}
-			else parse_error("dict|set", c);
+			else { parse_error("dict|set", c); return; }
 		}
-		if(obj_type == Dict && count % 2 != 0) parse_error("dict, uneven count", c);
+		if(obj_type == Dict && count % 2 != 0) { parse_error("dict, uneven count", c); return; }
 		write_char((obj_type == Dict) ? SETITEMS : ADDITEMS);
 	}
 
@@ -304,7 +363,7 @@ public:
 		int escape_hex = 0;
 		while(true) {
 			c = read_next_char();
-			if(c < 0) parse_error("str, got EOF", c);
+			if(c < 0) { parse_error("str, got EOF", c); return; }
 			if(escape_mode == Direct) {
 				if(c == quote) break;
 				if(c == '\\') escape_mode = EscapeInit;
@@ -322,7 +381,7 @@ public:
 					else if(c == 't') c_ = '\t';
 					else if(c == 'n') c_ = '\n';
 					else if(c == '\\' || c == '"' || c == '\'' || c == '\n') c_ = char(c);
-					else parse_error("str escaped", c);
+					else { parse_error("str escaped", c); return; }
 					buf.push_back(c_);
 					escape_mode = Direct;
 				}
@@ -331,7 +390,7 @@ public:
 				int h;
 				if(c >= '0' && c <= '9') h = c - '0';
 				else if(c >= 'a' && c <= 'f') h = c - 'a' + 10;
-				else parse_error("str hex escaped", c);
+				else { parse_error("str hex escaped", c); return; }
 				escape_hex *= 16;
 				escape_hex += h;
 				escape_hex_pos++;
@@ -459,9 +518,9 @@ public:
 
 		return ParseRes(c, had_one_item);
 	}
-	
 };
 
+#ifdef EXEC
 int main(int argc, char** argv) {
 	if(argc <= 2) {
 		printf("usage: %s <in-py-file> <out-pickle-file>\n", argv[0]);
@@ -482,4 +541,22 @@ int main(int argc, char** argv) {
 	
 	Parser parser(&reader, &writer);
 	parser.full_pass();
+	return 0;
 }
+#endif
+
+#ifdef LIB
+extern "C"
+int py_to_pickle(const char* in, size_t in_len, char* out, size_t out_len) {
+	MemReader reader(in, in_len);
+	MemWriter writer(out, out_len);
+	Parser parser(&reader, &writer);
+	parser.full_pass();
+	if(parser.got_error)
+		return 1;
+	if(writer.got_error)
+		return 2;
+	return 0;
+}
+#endif
+
