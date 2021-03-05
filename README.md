@@ -36,7 +36,8 @@ pickle.loads: 0.1351051709999993
 marshal.loads: 0.10351717500000035
 ```
 
-So our implementation is >6x faster than `eval`.
+So our implementation is >6x faster than `eval`,
+or >4.5x faster when you include the `pickle.loads` time.
 
 ## Properties
 
