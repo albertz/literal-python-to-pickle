@@ -8,6 +8,7 @@
 
 #include <string>
 #include <stdio.h>
+#include <stdlib.h>
 
 const int protocol = 3;
 
@@ -142,21 +143,35 @@ static void _write_size64(char *out, size_t value) {
 }
 
 static FILE *in, *out;
+static size_t out_pos = 0;
 
+static int read_next_char() {
+	return getc_unlocked(in);
+}
+
+static void write_char(char c) {
+	putc_unlocked(c, out);
+	++out_pos;
+}
+
+static void write_data(const char* data, size_t len) {
+	fwrite(data, len, 1, out);
+	out_pos += len;
+}
+
+[[noreturn]]
 static void parse_error(const char* ctx, char c) {
     fprintf(stderr, "parse error: %s: char '%c' in pos %li\n", ctx, c, ftell(in));
-    exit(1);
+	exit(1);
 }
 
 typedef std::pair<int,bool> ParseRes;  // next char + parsed one item or not
 
 static ParseRes parse();
-static void parse_list();
-static void parse_dict();
 
 static void parse_list() {
-    fputc(EMPTY_LIST, out);
-    fputc(MARK, out);
+    write_char(EMPTY_LIST);
+    write_char(MARK);
     while(true) {
         ParseRes res = parse();
         int c = res.first;
@@ -164,7 +179,7 @@ static void parse_list() {
         else if(c == ']') break;
         else parse_error("list", c);
     }
-    fputc(APPENDS, out);
+    write_char(APPENDS);
 }
 
 static void parse_dict_or_set() {
@@ -172,18 +187,19 @@ static void parse_dict_or_set() {
     size_t count = 0;
     enum {Dict, Set} obj_type = Dict;
     enum {Key, Value} cur = Key;
-    long start_out_pos = ftell(out);
+    long start_out_pos = out_pos;
     auto make_set = [&]{
         if(count != 1) parse_error("dict after parsing more than one entry", c);
         cur = Value;
         obj_type = Set;
-        int cur_pos = ftell(out);
+        long cur_pos = out_pos;
         fseek(out, start_out_pos, SEEK_SET);
-        fputc(EMPTY_SET, out);
+        write_char(EMPTY_SET);
         fseek(out, cur_pos, SEEK_SET);
+		out_pos = cur_pos;
     };
-    fputc(EMPTY_DICT, out);
-    fputc(MARK, out);
+    write_char(EMPTY_DICT);
+    write_char(MARK);
     while(true) {
         ParseRes res = parse();
         c = res.first;
@@ -205,7 +221,7 @@ static void parse_dict_or_set() {
         else parse_error("dict|set", c);
     }
     if(obj_type == Dict && count % 2 != 0) parse_error("dict, uneven count", c);
-    fputc((obj_type == Dict) ? SETITEMS : ADDITEMS, out);
+    write_char((obj_type == Dict) ? SETITEMS : ADDITEMS);
 }
 
 static void parse_str(char quote) {
@@ -218,7 +234,7 @@ static void parse_str(char quote) {
     int escape_hex_pos = 0;
     int escape_hex = 0;
     while(true) {
-        c = fgetc(in);
+        c = read_next_char();
         if(c < 0) parse_error("str, got EOF", c);
         if(escape_mode == Direct) {
             if(c == quote) break;
@@ -278,8 +294,8 @@ static void parse_str(char quote) {
         _write_size64(header + 1, size);
         len = 9;
     }
-    fwrite(header, len, 1, out);
-    fwrite(buf.data(), size, 1, out);
+    write_data(header, len);
+    write_data(buf.data(), size);
 }
 
 static int parse_num(char first) {
@@ -289,7 +305,7 @@ static int parse_num(char first) {
     buf.push_back(first);
 
     while(true) {
-        c = fgetc(in);
+        c = read_next_char();
         if(c < 0) break;
 
         if((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.') {
@@ -306,7 +322,7 @@ static int parse_num(char first) {
         char pdata[9];
         pdata[0] = BINFLOAT;
         _PyFloat_Pack8(val, (unsigned char *)&pdata[1], 0);
-        fwrite(pdata, sizeof(pdata), 1, out);
+        write_data(pdata, sizeof(pdata));
     }
     else {
         int len;
@@ -329,7 +345,7 @@ static int parse_num(char first) {
             pdata[0] = BININT1;
             len = 2;
         }
-        fwrite(pdata, len, 1, out);
+        write_data(pdata, len);
     }
     return c;
 }
@@ -339,7 +355,7 @@ static ParseRes parse() {
     bool had_one_item = false;
 
     while(true) {
-        c = fgetc(in);
+        c = read_next_char();
         if(c < 0) break;
 
         if(isspace(c))
@@ -382,20 +398,31 @@ int main(int argc, char** argv) {
     }
 
     in = fopen(argv[1], "r");
-    out = fopen(argv[2], "w");
-    setvbuf(out, NULL, _IOFBF, 0); // fully buffered out stream
+	if(!in) {
+		fprintf(stderr, "cannot open input file %s\n", argv[1]);
+		return 1;
+	}
+	
+	out = fopen(argv[2], "w");
+	if(!out) {
+		fprintf(stderr, "cannot open output file %s\n", argv[2]);
+		return 1;
+	}
+	
+	flockfile(in);
+	flockfile(out);
 
-    fputc(PROTO, out);
-    fputc(protocol, out);
+    write_char(PROTO);
+    write_char(protocol);
 
     ParseRes res = parse();
     if(!res.second) {
         fprintf(stderr, "invalid char %c\n", res.first);
         abort();
     }
-    // fputc(NONE, out);
+    // write_char(NONE);
 
-    fputc(STOP, out);
+    write_char(STOP);
 
     fclose(out);
     fclose(in);
