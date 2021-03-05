@@ -8,6 +8,7 @@ import better_exchook
 import json
 import pickle
 import marshal
+from subprocess import check_call
 from common import *
 import argparse
 
@@ -20,6 +21,10 @@ def main():
     txt_fn_gz = "demo.txt.gz"  # use the generate script
 
     cpp_compile()
+
+    if not os.path.exists(txt_fn_gz):
+        print(f"Demo txt does not exist: {txt_fn_gz}, creating now.")
+        check_call(["./generate-dummy-train-txt-gz.py"])
 
     t = time.time()
     txt = gzip.open(txt_fn_gz, "rb").read().decode("utf8")
