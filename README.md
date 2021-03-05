@@ -6,6 +6,10 @@
 `json.loads` shows that it can be much faster.
 `pickle.loads` is yet faster.
 
+This provides a much faster alternative to `ast.literal_eval`.
+
+([Related StackOverflow question](https://stackoverflow.com/questions/66480073/fastest-implementation-of-ast-literal-eval).)
+
 ## Usage
 
 Can be compiled as a standalone executable (mostly for testing), or as a library.
