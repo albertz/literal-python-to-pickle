@@ -1,4 +1,5 @@
 *.bin
+*.so
 *.gz
 demo.txt
 demo.pkl
