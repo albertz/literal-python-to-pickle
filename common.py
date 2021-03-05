@@ -49,6 +49,6 @@ def py_to_pickle(s: Union[str, bytes]) -> bytes:
     lib.py_to_pickle.restype = ctypes.c_int
 
     res = lib.py_to_pickle(in_, in_len, out_, out_len)
-    assert res == 0, "there was some error"
+    assert res == 0, "there was some error in %r" % in_bytes
     return out_.raw
 
