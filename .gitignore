@@ -4,3 +4,5 @@ demo.txt
 demo.pkl
 __pycache__
 build
+xcuserdata
+xcshareddata
