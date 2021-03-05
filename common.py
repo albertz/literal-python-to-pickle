@@ -13,7 +13,7 @@ _LibFilename = "libpytopickle.so"
 
 
 def cpp_compile():
-    check_call(["c++", "-std=c++11", "-DEXEC", _CppFilename, "-o", _BinFilename])
+    check_call(["c++", "-std=c++11", _CppFilename, "-o", _BinFilename])
     check_call(["c++", "-std=c++11", "-DLIB", _CppFilename, "-shared", "-fPIC", "-o", _LibFilename])
 
 
