@@ -9,29 +9,8 @@ import sys
 import pickle
 import gzip
 import argparse
+from common import *
 
-
-_CppFilename = "py-to-pickle.cpp"
-_BinFilename = "py-to-pickle.bin"
-
-
-def cpp_compile():
-    check_call(["c++", "-std=c++11", _CppFilename, "-o", _BinFilename])
-
-
-def py_to_pickle(s: str):
-    with tempfile.NamedTemporaryFile("w", suffix=".py") as f_py:
-        f_py.write(s)
-        f_py.write("\n")
-        f_py.flush()
-
-        with tempfile.NamedTemporaryFile("w", suffix=".pkl", prefix=os.path.basename(f_py.name)) as f_pkl:
-            try:
-                check_call(["./" + _BinFilename, f_py.name, f_pkl.name])
-            except CalledProcessError as exc:
-                print(f"{_BinFilename} returned error code {exc.returncode}")
-                sys.exit(1)
-            return open(f_pkl.name, "rb").read()
 
 
 def assert_equal(a, b, _msg=""):
@@ -56,6 +35,9 @@ def check(s: str):
     assert_equal(a, b)
 
     c_bin = py_to_pickle(s)
+    c_bin2 = py_to_pickle_tmp(s)
+    assert_equal(c_bin, c_bin2)
+
     c = pickle.loads(c_bin)
     assert_equal(b, c)
 
