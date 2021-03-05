@@ -3,14 +3,12 @@
 import better_exchook
 from subprocess import check_call, CalledProcessError
 import ast
-import tempfile
 import os
-import sys
 import pickle
 import gzip
 import argparse
+from typing import Union
 from common import *
-
 
 
 def assert_equal(a, b, _msg=""):
@@ -28,7 +26,7 @@ def assert_equal(a, b, _msg=""):
         assert a == b, f"{a} != {b} in {_msg}"
 
 
-def check(s: str):
+def check(s: Union[str, bytes]):
     print("Check:", s if len(s) <= 80 else s[:70] + "...")
     a = eval(s)
     b = ast.literal_eval(s)
@@ -36,6 +34,7 @@ def check(s: str):
 
     c_bin = py_to_pickle(s)
     c_bin2 = py_to_pickle_tmp(s)
+    c_bin = c_bin[:len(c_bin2)]
     assert_equal(c_bin, c_bin2)
 
     c = pickle.loads(c_bin)
@@ -60,7 +59,7 @@ def tests(*, fast=True):
 
     txt_fn_gz = "demo.txt.gz"  # use the generate script
     if os.path.exists(txt_fn_gz):
-        txt = gzip.open(txt_fn_gz, "rb").read().decode("utf8")
+        txt = gzip.open(txt_fn_gz, "rb").read()
         check(txt)
     else:
         print(f"({txt_fn_gz} does not exist)")
