@@ -7,6 +7,7 @@ import tempfile
 import os
 import sys
 import pickle
+import gzip
 
 
 _CppFilename = "py-to-pickle.cpp"
@@ -36,7 +37,7 @@ def assert_equal(a, b, _msg=""):
     assert type(a) == type(b)
     if isinstance(a, dict):
         assert len(a) == len(b)
-        for key, a_value in a:
+        for key, a_value in a.items():
             b_value = b[key]
             assert_equal(a_value, b_value, _msg + f"[{key}]")
     elif isinstance(a, (list, tuple)):
@@ -48,7 +49,7 @@ def assert_equal(a, b, _msg=""):
 
 
 def check(s: str):
-    print("Check:", s)
+    print("Check:", s if len(s) <= 80 else s[:70] + "...")
     a = eval(s)
     b = ast.literal_eval(s)
     assert_equal(a, b)
@@ -63,12 +64,20 @@ def tests():
         "0", "1",
         "0.0", "1.23",
         '""', '"abc"', "''", "'abc'",
+        '"abc\\n\\x00\\x01\\"\'abc"',
         "[]", "[1]", "[1,2,3]",
         "{}", "{'a': 'b', 1: 2}",
         "{1}", "{1,2,3}",
     ]
     for s in checks:
         check(s)
+
+    txt_fn_gz = "demo.txt.gz"  # use the generate script
+    if os.path.exists(txt_fn_gz):
+        txt = gzip.open(txt_fn_gz, "rb").read().decode("utf8")
+        check(txt)
+    else:
+        print(f"({txt_fn_gz} does not exist)")
 
 
 def main():

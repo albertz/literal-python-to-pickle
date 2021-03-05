@@ -144,7 +144,7 @@ static void _write_size64(char *out, size_t value) {
 static FILE *in, *out;
 
 static void parse_error(const char* ctx, char c) {
-    fprintf(stderr, "parse error: %s: char '%c' in pos %li\n", ctx, c, ftell(in) - 1);
+    fprintf(stderr, "parse error: %s: char '%c' in pos %li\n", ctx, c, ftell(in));
     exit(1);
 }
 
@@ -191,15 +191,18 @@ static void parse_dict_or_set() {
         if(c == ',') {
             if(count == 1) make_set();
             if(cur == Key) parse_error("dict after parsing key", c);
+            if(obj_type == Dict) cur = Key;
         }
         else if(c == ':') {
             if(cur != Key) parse_error("dict expected key before", c);
             if(obj_type == Set) parse_error("set", c);
+            cur = Value;
         }
         else if(c == '}') {
             if(count == 1) make_set();
             break;
         }
+        else parse_error("dict|set", c);
     }
     if(obj_type == Dict && count % 2 != 0) parse_error("dict, uneven count", c);
     fputc((obj_type == Dict) ? SETITEMS : ADDITEMS, out);
@@ -216,7 +219,7 @@ static void parse_str(char quote) {
     int escape_hex = 0;
     while(true) {
         c = fgetc(in);
-        if(c < 0) break;
+        if(c < 0) parse_error("str, got EOF", c);
         if(escape_mode == Direct) {
             if(c == quote) break;
             if(c == '\\') escape_mode = EscapeInit;
@@ -303,7 +306,7 @@ static int parse_num(char first) {
         char pdata[9];
         pdata[0] = BINFLOAT;
         _PyFloat_Pack8(val, (unsigned char *)&pdata[1], 0);
-        fwrite(pdata, 9, 1, out);
+        fwrite(pdata, sizeof(pdata), 1, out);
     }
     else {
         int len;
@@ -339,7 +342,7 @@ static ParseRes parse() {
         c = fgetc(in);
         if(c < 0) break;
 
-        if(c == ' ' || c == '\t' || c == '\n')
+        if(isspace(c))
             continue;
 
         // (continued strings not yet supported...)
@@ -350,7 +353,7 @@ static ParseRes parse() {
             parse_str(c);
             had_one_item = true;
         }
-        if(c == '[') {
+        else if(c == '[') {
             parse_list();
             had_one_item = true;
         }
@@ -361,10 +364,12 @@ static ParseRes parse() {
         else if((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.') {
             c = parse_num(c);
             had_one_item = true;
+            if(c < 0 || !isspace(c))
+                break;
         }
-        else        
+        else
             // some unexpected char
-            break;    
+            break;
     }
 
     return ParseRes(c, had_one_item);
@@ -378,6 +383,7 @@ int main(int argc, char** argv) {
 
     in = fopen(argv[1], "r");
     out = fopen(argv[2], "w");
+    setvbuf(out, NULL, _IOFBF, 0); // fully buffered out stream
 
     fputc(PROTO, out);
     fputc(protocol, out);
