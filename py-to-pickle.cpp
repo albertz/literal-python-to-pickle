@@ -155,7 +155,11 @@ static void write_char(char c) {
 }
 
 static void write_data(const char* data, size_t len) {
+#ifdef __linux__
+	fwrite_unlocked(data, len, 1, out);
+#else
 	fwrite(data, len, 1, out);
+#endif
 	out_pos += len;
 }
 
