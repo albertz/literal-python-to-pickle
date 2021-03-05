@@ -96,7 +96,6 @@ static void _PyFloat_Pack8(double x, unsigned char *p, int le) {
     typedef enum {
         unset, ieee_big_endian_format, ieee_little_endian_format
     } float_format_type;
-
     static float_format_type double_format = unset;
 
 #if __SIZEOF_DOUBLE__ == 8
@@ -107,7 +106,7 @@ static void _PyFloat_Pack8(double x, unsigned char *p, int le) {
         else if (memcmp(&x, "\x05\x04\x03\x02\x01\xff\x3f\x43", 8) == 0)
             double_format = ieee_little_endian_format;
         else {
-            perror("invalid double format");
+            fprintf(stderr, "invalid double format");
             abort();
         }
     }
@@ -130,32 +129,154 @@ static void _PyFloat_Pack8(double x, unsigned char *p, int le) {
     }
 }
 
+static void _write_size64(char *out, size_t value) {
+    size_t i;
+    static_assert(sizeof(size_t) <= 8, "sizeof size_t != 8");
+
+    for (i = 0; i < sizeof(size_t); i++) {
+        out[i] = (unsigned char)((value >> (8 * i)) & 0xff);
+    }
+    for (i = sizeof(size_t); i < 8; i++) {
+        out[i] = 0;
+    }
+}
+
 static FILE *in, *out;
 
-static int parse();
-static int parse_list();
-static int parse_dict();
+static void parse_error(const char* ctx, char c) {
+    fprintf(stderr, "parse error: %s: char '%c' in pos %li\n", ctx, c, ftell(in) - 1);
+    exit(1);
+}
 
-static int parse_list() {
-    int c;
+typedef std::pair<int,bool> ParseRes;  // next char + parsed one item or not
+
+static ParseRes parse();
+static void parse_list();
+static void parse_dict();
+
+static void parse_list() {
     fputc(EMPTY_LIST, out);
     fputc(MARK, out);
     while(true) {
-        c = parse();
+        ParseRes res = parse();
+        int c = res.first;
         if(c == ',') continue;
-        if(c == ']') break;
+        else if(c == ']') break;
+        else parse_error("list", c);
     }
     fputc(APPENDS, out);
 }
 
-static int parse_dict() {
+static void parse_dict_or_set() {
     int c;
+    size_t count = 0;
+    enum {Dict, Set} obj_type = Dict;
+    enum {Key, Value} cur = Key;
+    long start_out_pos = ftell(out);
+    auto make_set = [&]{
+        if(count != 1) parse_error("dict after parsing more than one entry", c);
+        cur = Value;
+        obj_type = Set;
+        int cur_pos = ftell(out);
+        fseek(out, start_out_pos, SEEK_SET);
+        fputc(EMPTY_SET, out);
+        fseek(out, cur_pos, SEEK_SET);
+    };
     fputc(EMPTY_DICT, out);
-
+    fputc(MARK, out);
+    while(true) {
+        ParseRes res = parse();
+        c = res.first;
+        if(res.second) ++count;
+        if(c == ',') {
+            if(count == 1) make_set();
+            if(cur == Key) parse_error("dict after parsing key", c);
+        }
+        else if(c == ':') {
+            if(cur != Key) parse_error("dict expected key before", c);
+            if(obj_type == Set) parse_error("set", c);
+        }
+        else if(c == '}') {
+            if(count == 1) make_set();
+            break;
+        }
+    }
+    if(obj_type == Dict && count % 2 != 0) parse_error("dict, uneven count", c);
+    fputc((obj_type == Dict) ? SETITEMS : ADDITEMS, out);
 }
 
-static int parse_str(char quote) {
+static void parse_str(char quote) {
+    // We expect to already have utf8 here (i.e. input file is utf8).
+    // This can potentially be sped up, by writing early,
+    // and then filling in the size. (We might want to ignore BINUNICODE8.)
+    int c;
+    std::string buf;
+    enum {Direct, EscapeInit, EscapeHex} escape_mode = Direct;
+    int escape_hex_pos = 0;
+    int escape_hex = 0;
+    while(true) {
+        c = fgetc(in);
+        if(c < 0) break;
+        if(escape_mode == Direct) {
+            if(c == quote) break;
+            if(c == '\\') escape_mode = EscapeInit;
+            else buf.push_back((char) c);
+        }
+        else if(escape_mode == EscapeInit) {
+            if(c == 'x') {
+                escape_mode = EscapeHex;
+                escape_hex_pos = 0;
+                escape_hex = 0;
+            }
+            else {
+                char c_;
+                if(c == 'r') c_ = '\r';
+                else if(c == 't') c_ = '\t';
+                else if(c == 'n') c_ = '\n';
+                else if(c == '\\' || c == '"' || c == '\'' || c == '\n') c_ = char(c);
+                else parse_error("str escaped", c);
+                buf.push_back(c_);
+                escape_mode = Direct;
+            }
+        }
+        else if(escape_mode == EscapeHex) {
+            int h;
+            if(c >= '0' && c <= '9') h = c - '0';
+            else if(c >= 'a' && c <= 'f') h = c - 'a' + 10;
+            else parse_error("str hex escaped", c);
+            escape_hex *= 16;
+            escape_hex += h;
+            escape_hex_pos++;
+            if(escape_hex_pos == 2) {
+                buf.push_back(char(escape_hex));
+                escape_mode = Direct;
+            }
+        }
+    }
 
+    char header[9];
+    int len;
+    size_t size = buf.length();
+    if(size <= 0xff) {
+        header[0] = SHORT_BINUNICODE;
+        header[1] = (unsigned char)(size & 0xff);
+        len = 2;
+    }
+    else if(size <= 0xffffffffUL) {
+        header[0] = BINUNICODE;
+        header[1] = (unsigned char)(size & 0xff);
+        header[2] = (unsigned char)((size >> 8) & 0xff);
+        header[3] = (unsigned char)((size >> 16) & 0xff);
+        header[4] = (unsigned char)((size >> 24) & 0xff);
+        len = 5;
+    }
+    else {
+        header[0] = BINUNICODE8;
+        _write_size64(header + 1, size);
+        len = 9;
+    }
+    fwrite(header, len, 1, out);
+    fwrite(buf.data(), size, 1, out);
 }
 
 static int parse_num(char first) {
@@ -210,26 +331,43 @@ static int parse_num(char first) {
     return c;
 }
 
-static int parse() {
-    int state = 0;
+static ParseRes parse() {
+    int c;
+    bool had_one_item = false;
+
     while(true) {
-        int c = fgetc(in);
-        if(c < 0) return c;
+        c = fgetc(in);
+        if(c < 0) break;
 
         if(c == ' ' || c == '\t' || c == '\n')
             continue;
-        else if(c == '[')
-            parse_list();
-        else if(c == '{')
-            parse_dict();
-        else if(c == '\'' || c == '"')
+
+        // (continued strings not yet supported...)
+        if(had_one_item)
+            break;
+        
+        if(c == '\'' || c == '"') {
             parse_str(c);
-        else if((c >= '0' && c <= '9') || c == '+' || c == '-')
-            parse_num(c);
-        else
-            return c;
+            had_one_item = true;
+        }
+        if(c == '[') {
+            parse_list();
+            had_one_item = true;
+        }
+        else if(c == '{') {
+            parse_dict_or_set();
+            had_one_item = true;
+        }
+        else if((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.') {
+            c = parse_num(c);
+            had_one_item = true;
+        }
+        else        
+            // some unexpected char
+            break;    
     }
 
+    return ParseRes(c, had_one_item);
 }
 
 int main(int argc, char** argv) {
@@ -244,10 +382,9 @@ int main(int argc, char** argv) {
     fputc(PROTO, out);
     fputc(protocol, out);
 
-    int c = parse();
-    if(c >= 0) {
-        fprintf(stderr, "invalid char %c\n", c);
-        perror("invalid char");
+    ParseRes res = parse();
+    if(!res.second) {
+        fprintf(stderr, "invalid char %c\n", res.first);
         abort();
     }
     // fputc(NONE, out);

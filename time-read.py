@@ -3,12 +3,12 @@
 import gzip
 import timeit
 import ast
-import os
 import time
 import better_exchook
 import json
 import pickle
 import marshal
+from test import py_to_pickle
 
 better_exchook.install()
 txt_fn_gz = "demo.txt.gz"  # use the generate script
@@ -22,6 +22,8 @@ print("compile:", timeit.timeit(lambda: compile(txt, "<>", "exec"), number=1))
 print("parse:", timeit.timeit(lambda: compile(txt, "<>", "exec", ast.PyCF_ONLY_AST), number=1))
 print("eval:", timeit.timeit(lambda: eval(txt), number=1))
 print("ast.literal_eval:", timeit.timeit(lambda: ast.literal_eval(txt), number=1))
+print("py_to_pickle:", timeit.timeit(lambda: py_to_pickle(txt), number=1))
+print("pickle.loads+py_to_pickle:", timeit.timeit(lambda: pickle.loads(py_to_pickle(txt)), number=1))
 
 content = eval(txt)
 js = json.dumps(content)

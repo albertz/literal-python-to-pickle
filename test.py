@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 import better_exchook
-from subprocess import check_call
+from subprocess import check_call, CalledProcessError
 import ast
 import tempfile
 import os
+import sys
 import pickle
 
 
@@ -13,7 +14,7 @@ _BinFilename = "py-to-pickle.bin"
 
 
 def cpp_compile():
-    check_call(["c++", _CppFilename, "-o", _BinFilename])
+    check_call(["c++", "-std=c++11", _CppFilename, "-o", _BinFilename])
 
 
 def py_to_pickle(s: str):
@@ -23,7 +24,11 @@ def py_to_pickle(s: str):
         f_py.flush()
 
         with tempfile.NamedTemporaryFile("w", suffix=".pkl", prefix=os.path.basename(f_py.name)) as f_pkl:
-            check_call(["./" + _BinFilename, f_py.name, f_pkl.name])
+            try:
+                check_call(["./" + _BinFilename, f_py.name, f_pkl.name])
+            except CalledProcessError as exc:
+                print(f"{_BinFilename} returned error code {exc.returncode}")
+                sys.exit(1)
             return open(f_pkl.name, "rb").read()
 
 
@@ -36,13 +41,14 @@ def assert_equal(a, b, _msg=""):
             assert_equal(a_value, b_value, _msg + f"[{key}]")
     elif isinstance(a, (list, tuple)):
         assert len(a) == len(b)
-        for i, (a_value, b_value) in enumerate(a, zip(a, b)):
+        for i, (a_value, b_value) in enumerate(zip(a, b)):
             assert_equal(a_value, b_value, _msg + f"[{i}]")
     else:
         assert a == b, f"{a} != {b} in {_msg}"
 
 
 def check(s: str):
+    print("Check:", s)
     a = eval(s)
     b = ast.literal_eval(s)
     assert_equal(a, b)
@@ -52,30 +58,22 @@ def check(s: str):
     assert_equal(b, c)
 
 
-def test_int0():
-    check("0")
-
-
-def test_int1():
-    check("1")
-
-
-def test_float0():
-    check("0.0")
-
-
-def test_float123():
-    check("1.23")
+def tests():
+    checks = [
+        "0", "1",
+        "0.0", "1.23",
+        '""', '"abc"', "''", "'abc'",
+        "[]", "[1]", "[1,2,3]",
+        "{}", "{'a': 'b', 1: 2}",
+        "{1}", "{1,2,3}",
+    ]
+    for s in checks:
+        check(s)
 
 
 def main():
     cpp_compile()
-
-    for key, func in list(globals().items()):
-        if key.startswith("test_") and callable(func):
-            print(f"** {key}()")
-            func()
-            print()
+    tests()
     print("All passed!")
 
 
