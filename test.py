@@ -27,9 +27,9 @@ def assert_equal(a, b, _msg=""):
 
 
 def check(s: Union[str, bytes]):
-    print("Check:", s if len(s) <= 80 else s[:70] + "...")
+    print("Check:", repr(s) if len(s) <= 80 else repr(s[:70]) + "...")
     a = eval(s)
-    b = ast.literal_eval(s)
+    b = ast.literal_eval(s if isinstance(s, str) else s.decode("utf8"))
     assert_equal(a, b)
 
     c_bin = py_to_pickle(s)
