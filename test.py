@@ -8,6 +8,7 @@ import os
 import sys
 import pickle
 import gzip
+import argparse
 
 
 _CppFilename = "py-to-pickle.cpp"
@@ -59,7 +60,7 @@ def check(s: str):
     assert_equal(b, c)
 
 
-def tests():
+def tests(*, fast=True):
     checks = [
         "0", "1",
         "0.0", "1.23",
@@ -72,6 +73,9 @@ def tests():
     for s in checks:
         check(s)
 
+    if fast:
+        return
+
     txt_fn_gz = "demo.txt.gz"  # use the generate script
     if os.path.exists(txt_fn_gz):
         txt = gzip.open(txt_fn_gz, "rb").read().decode("utf8")
@@ -81,8 +85,11 @@ def tests():
 
 
 def main():
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--fast", action="store_true")
+    args = arg_parser.parse_args()
     cpp_compile()
-    tests()
+    tests(fast=args.fast)
     print("All passed!")
 
 
