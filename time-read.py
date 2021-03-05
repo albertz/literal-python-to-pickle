@@ -8,8 +8,9 @@ import better_exchook
 import json
 import pickle
 import marshal
-from test import py_to_pickle
+from common import *
 import argparse
+
 
 def main():
     arg_parser = argparse.ArgumentParser()
@@ -17,6 +18,8 @@ def main():
     args = arg_parser.parse_args()
 
     txt_fn_gz = "demo.txt.gz"  # use the generate script
+
+    cpp_compile()
 
     t = time.time()
     txt = gzip.open(txt_fn_gz, "rb").read().decode("utf8")
