@@ -1,5 +1,5 @@
 
-// c++ py-to-pickle.cpp
+// c++ py-to-pickle.cpp -o py-to-pickle.bin
 // ./a.out demo.txt demo.pkl
 // python3 -c "import pickle; pickle.load(open('demo.pkl', 'rb'))"
 
@@ -99,7 +99,7 @@ static void _PyFloat_Pack8(double x, unsigned char *p, int le) {
 
     static float_format_type double_format = unset;
 
-#if SIZEOF_DOUBLE == 8
+#if __SIZEOF_DOUBLE__ == 8
     if(double_format == unset) {
         double x = 9006104071832581.0;
         if (memcmp(&x, "\x43\x3f\xff\x01\x02\x03\x04\x05", 8) == 0)
@@ -112,7 +112,7 @@ static void _PyFloat_Pack8(double x, unsigned char *p, int le) {
         }
     }
 #else
-#error invalid SIZEOF_DOUBLE
+#error invalid __SIZEOF_DOUBLE__
 #endif
 
     const unsigned char *s = (unsigned char*)&x;
@@ -149,6 +149,8 @@ static int parse_list() {
 }
 
 static int parse_dict() {
+    int c;
+    fputc(EMPTY_DICT, out);
 
 }
 
