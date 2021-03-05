@@ -1,4 +1,4 @@
-# Convert literal Python to Pickle
+# Convert literal Python to Pickle / Faster `ast.literal_eval`
 
 ## Why
 
