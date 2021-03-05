@@ -2,3 +2,4 @@
 *.gz
 demo.txt
 demo.pkl
+__pycache__
