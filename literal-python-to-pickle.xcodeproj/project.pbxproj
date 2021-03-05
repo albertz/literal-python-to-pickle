@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		23F66F2525F2580500FF6B2D /* py-to-pickle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 23F66F2425F2580500FF6B2D /* py-to-pickle.cpp */; };
+		230F250625F262D900F59216 /* py-to-pickle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 230F250525F262D900F59216 /* py-to-pickle.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -23,8 +23,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		230F250525F262D900F59216 /* py-to-pickle.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "py-to-pickle.cpp"; sourceTree = SOURCE_ROOT; };
 		23F66F1A25F257F000FF6B2D /* literal-python-to-pickle */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "literal-python-to-pickle"; sourceTree = BUILT_PRODUCTS_DIR; };
-		23F66F2425F2580500FF6B2D /* py-to-pickle.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = "py-to-pickle.cpp"; path = "../../py-to-pickle.cpp"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,7 +57,7 @@
 		23F66F1C25F257F000FF6B2D /* literal-python-to-pickle */ = {
 			isa = PBXGroup;
 			children = (
-				23F66F2425F2580500FF6B2D /* py-to-pickle.cpp */,
+				230F250525F262D900F59216 /* py-to-pickle.cpp */,
 			);
 			path = "literal-python-to-pickle";
 			sourceTree = "<group>";
@@ -118,7 +118,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				23F66F2525F2580500FF6B2D /* py-to-pickle.cpp in Sources */,
+				230F250625F262D900F59216 /* py-to-pickle.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
