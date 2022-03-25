@@ -147,6 +147,53 @@ static void _write_size64(char *out, size_t value) {
 	}
 }
 
+/**
+ * Encode a code point using UTF-8
+ * Code adopted for C++
+ *
+ * @author Ondřej Hruška <ondra@ondrovo.com>
+ * @license MIT
+ *
+ * @param utf - code point 0-0x10FFFF
+ * @return number of bytes on success, 0 on failure (also produces U+FFFD, which uses 3 bytes)
+ */
+int utf8_encode(std::string& out, uint32_t utf)
+{
+  if (utf <= 0x7F) {
+	// Plain ASCII
+	out.push_back((char) utf);
+	return 1;
+  }
+  else if (utf <= 0x07FF) {
+	// 2-byte unicode
+	out.push_back((char) (((utf >> 6) & 0x1F) | 0xC0));
+	out.push_back((char) (((utf >> 0) & 0x3F) | 0x80));
+	return 2;
+  }
+  else if (utf <= 0xFFFF) {
+	// 3-byte unicode
+	out.push_back((char) (((utf >> 12) & 0x0F) | 0xE0));
+	out.push_back((char) (((utf >>  6) & 0x3F) | 0x80));
+	out.push_back((char) (((utf >>  0) & 0x3F) | 0x80));
+	return 3;
+  }
+  else if (utf <= 0x10FFFF) {
+	// 4-byte unicode
+	out.push_back((char) (((utf >> 18) & 0x07) | 0xF0));
+	out.push_back((char) (((utf >> 12) & 0x3F) | 0x80));
+	out.push_back((char) (((utf >>  6) & 0x3F) | 0x80));
+	out.push_back((char) (((utf >>  0) & 0x3F) | 0x80));
+	return 4;
+  }
+  else {
+	// error - use replacement character
+	out.push_back((char) 0xEF);
+	out.push_back((char) 0xBF);
+	out.push_back((char) 0xBD);
+	return 0;
+  }
+}
+
 struct Reader {
 	virtual ~Reader() {}
 	virtual bool valid() = 0;
@@ -357,11 +404,12 @@ public:
 		// We expect to already have utf8 here (i.e. input file is utf8).
 		// This can potentially be sped up, by writing early,
 		// and then filling in the size. (We might want to ignore BINUNICODE8.)
+		// https://docs.python.org/3/reference/lexical_analysis.html#grammar-token-python-grammar-stringescapeseq
 		int c;
 		std::string buf;
 		enum {Direct, EscapeInit, EscapeHex} escape_mode = Direct;
-		int escape_hex_pos = 0;
-		int escape_hex = 0;
+		int escape_hex_rem = 0;
+		uint32_t escape_hex = 0;
 		while(true) {
 			c = read_next_char();
 			if(c < 0) { parse_error("str, got EOF", c); return; }
@@ -371,9 +419,14 @@ public:
 				else buf.push_back((char) c);
 			}
 			else if(escape_mode == EscapeInit) {
-				if(c == 'x') {
+				if(c == 'x' || c == 'u' || c == 'U') {
 					escape_mode = EscapeHex;
-					escape_hex_pos = 0;
+					switch(c) {
+						case 'x': escape_hex_rem = 2; break; // 8 bit
+						case 'u': escape_hex_rem = 4; break; // 16 bit
+						case 'U': escape_hex_rem = 8; break; // 32 bit
+						default: assert(false);
+					}
 					escape_hex = 0;
 				}
 				else {
@@ -394,9 +447,9 @@ public:
 				else { parse_error("str hex escaped", c); return; }
 				escape_hex *= 16;
 				escape_hex += h;
-				escape_hex_pos++;
-				if(escape_hex_pos == 2) {
-					buf.push_back(char(escape_hex));
+				escape_hex_rem--;
+				if(escape_hex_rem <= 0) {
+					utf8_encode(buf, escape_hex);
 					escape_mode = Direct;
 				}
 			}
