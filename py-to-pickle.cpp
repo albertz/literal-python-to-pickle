@@ -449,7 +449,8 @@ public:
 				escape_hex += h;
 				escape_hex_rem--;
 				if(escape_hex_rem <= 0) {
-					utf8_encode(buf, escape_hex);
+					if(utf8_encode(buf, escape_hex) <= 0)
+					{ parse_error("utf8 encode", c); return; }
 					escape_mode = Direct;
 				}
 			}
