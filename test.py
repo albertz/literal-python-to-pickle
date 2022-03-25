@@ -23,7 +23,7 @@ def assert_equal(a, b, _msg=""):
         for i, (a_value, b_value) in enumerate(zip(a, b)):
             assert_equal(a_value, b_value, _msg + f"[{i}]")
     else:
-        assert a == b, f"{a} != {b} in {_msg}"
+        assert a == b, f"{a!r} != {b!r} in {_msg}"
 
 
 def check(s: Union[str, bytes]):
@@ -48,6 +48,7 @@ def tests(*, fast=True):
         '""', '"abc"', "''", "'abc'",
         '"abc\\n\\x00\\x01\\"\'abc"',
         "'hällö'",
+        "'k\\u200eý'",
         "[]", "[1]", "[1,2,3]",
         "{}", "{'a': 'b', 1: 2}",
         "{1}", "{1,2,3}",
